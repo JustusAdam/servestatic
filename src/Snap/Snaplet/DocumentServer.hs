@@ -4,34 +4,24 @@ module Snap.Snaplet.DocumentServer where
 
 
 import           Control.Applicative
-import           Control.Arrow                 ((&&&))
+import           Control.Arrow                       ((&&&))
 import           Control.Lens
-import           Control.Lens.TH
-import           Control.Monad                 (unless, void, when)
-import           Control.Monad.IO.Class        (liftIO)
-import           Control.Monad.Trans.Class     (lift)
-import           Control.Monad.Trans.Maybe
-import qualified Data.ByteString.Char8         as B
-import qualified Data.ByteString.Lazy.Char8    as LB
-import           Data.Default                  (Default, def)
-import qualified Data.HashMap.Strict           as HM
-import           Data.List.Extra               (intersperse, splitOn)
-import           Data.Maybe
-import           Data.Maybe                    (fromMaybe)
-import           Data.Monoid                   ((<>))
-import qualified Data.Text                     as T
-import           Data.Text.Encoding            (encodeUtf8)
+import           Control.Monad                       (unless, void)
+import           Control.Monad.IO.Class              (liftIO)
+import qualified Data.ByteString.Char8               as B
+import           Data.List.Extra                     (intersperse, splitOn)
+import           Data.Maybe                          (fromMaybe)
+import           Data.Monoid                         ((<>))
+import qualified Data.Text                           as T
+import           Data.Text.Encoding                  (encodeUtf8)
 import           Snap
-import           Snap.Snaplet.Heist
+import           Snap.Snaplet.DocumentServer.Compile (compile, CompileResult(..))
 import           System.Directory
 import           System.FilePath
-import           System.IO                     (hPutStrLn, stderr)
-import           Text.Blaze.Html.Renderer.Utf8 (renderHtmlBuilder)
-import qualified Text.Blaze.Html5              as Html
-import qualified Text.Blaze.Html5.Attributes   as Attr
-import           Text.Pandoc                   (Pandoc, readDocx, readLaTeX,
-                                                readMarkdown, readOdt,
-                                                writeHtml)
+import           System.IO                           (stderr)
+import           Text.Blaze.Html.Renderer.Utf8       (renderHtmlBuilder)
+import qualified Text.Blaze.Html5                    as Html
+import qualified Text.Blaze.Html5.Attributes         as Attr
 
 
 writeError :: B.ByteString -> IO ()
@@ -48,39 +38,6 @@ data DocumentServer = DocumentServer
 
 
 makeLenses ''DocumentServer
-
-
-compilerNotImplemented :: Monad m => a -> MaybeT m Html.Html
-compilerNotImplemented = const $ return $ Html.string "Compiler not implemented"
-
-
-mkCompiler :: (LB.ByteString -> Either a Pandoc) -> String -> MaybeT IO Html.Html
-mkCompiler reader file = do
-  contents <- lift $ LB.readFile file
-  case reader contents of
-    Right val -> return $ writeHtml def val
-    Left _ -> empty
-
-
-compilers :: HM.HashMap String (FilePath -> MaybeT IO Html.Html)
-compilers = HM.fromList
-  [ (".md", markdown)
-  , (".markdown", markdown)
-  , (".tex", latex)
-  , (".docx", docx)
-  , (".odt", odt)
-  ]
-  where
-    markdown = mkCompiler $ readMarkdown def . LB.unpack
-    latex = mkCompiler $ readLaTeX def . LB.unpack
-    docx = mkCompiler $ fmap fst . readDocx def
-    odt = mkCompiler $ fmap fst . readOdt def
-
-
-compile :: FilePath -> IO (Maybe Html.Html)
-compile path = runMaybeT $ do
-  compiler <- MaybeT $ return $ HM.lookup (takeExtension path) compilers
-  compiler path
 
 
 initDocumentServer :: T.Text -> FilePath -> SnapletInit DocumentServer DocumentServer
@@ -100,24 +57,39 @@ initDocumentServer name fp =
 
 serveDocument :: Handler b DocumentServer ()
 serveDocument = do
-  path <- getDocServerPath
-  absolutePath <- absolutize path
+  requestedPath <- getDocServerPath
+  absolutePath <- absolutize requestedPath
   isFile <- liftIO $ doesFileExist absolutePath
   if isFile
     then do
       compiled <- liftIO $ compile absolutePath
-      respBasicPage (Html.string path) $ fromMaybe (Html.string "Compilation failed") compiled
+      breadc <- breadcrumbs
+      let embed e =
+            respBasicPage (Html.string requestedPath) $ do
+              breadc
+              e
+      case compiled of
+        Embeddable h -> embed h
+        Servable b -> writeLBS b
+        Failed err -> embed (Html.div $ Html.string err)
+
     else empty
 
 
 serveDirectory :: Handler b DocumentServer ()
 serveDirectory = do
-  path <- getDocServerPath
-  absolutePath <- absolutize path
+  requestedPath <- getDocServerPath
+  absolutePath <- absolutize requestedPath
   isDir <- liftIO $ doesDirectoryExist absolutePath
   if isDir
     then do
-      contents <- liftIO $ getDirectoryContents absolutePath
+      let isRoot = requestedPath == "/" || requestedPath == ""
+      contents <-
+        filter (\p ->
+          p /= "." && (not isRoot || p /= "..")
+          )
+        <$>
+        liftIO (getDirectoryContents absolutePath)
       uri <- withRequest $ return . B.unpack . rqURI
       let
           navigate path' = case reverse uri of
@@ -126,7 +98,7 @@ serveDirectory = do
       breadc <- breadcrumbs
       respHtml $
         htmlPage
-          (Html.title $ Html.string path)
+          (Html.title $ Html.string requestedPath)
           $ Html.div $ do
               Html.div breadc
               Html.div $
@@ -134,9 +106,11 @@ serveDirectory = do
     else empty
 
 
+duplicate :: a -> (a, a)
 duplicate a = (a, a)
 
 
+makeLinkList :: [(String, String)] -> Html.Html
 makeLinkList =
   Html.ul .
     mapM_ (\(target, thing) ->
@@ -145,14 +119,15 @@ makeLinkList =
           Html.string thing)
 
 
+joinWith :: Monoid m => m -> m -> m -> m
 joinWith c a b = a <> c <> b
 
 
 breadcrumbs :: Handler b DocumentServer Html.Html
 breadcrumbs = do
-  path <- getDocServerPath
+  requestedPath <- getDocServerPath
   basePath <- withRequest $ return . B.unpack . rqContextPath
-  let segments = splitOn "/" path
+  let segments = splitOn "/" requestedPath
       partialPaths = scanl (joinWith "/") "" segments
       absolutizedPaths = map (basePath </>) partialPaths
       makeLink (target, value) = Html.a Html.! Attr.href (Html.toValue target) $ Html.string value
@@ -191,9 +166,11 @@ getDocServerPath :: MonadSnap m => m String
 getDocServerPath = withRequest $ return . B.unpack . rqPathInfo
 
 
+documentNotFound :: Handler DocumentServer DocumentServer ()
 documentNotFound = do
   name <- getDocServerPath
   respHtml $ Html.string $ "File " <> name <> "not found."
 
 
+documentHandler :: Handler DocumentServer DocumentServer ()
 documentHandler = serveDocument <|> serveDirectory <|> documentNotFound

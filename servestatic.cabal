@@ -1,55 +1,62 @@
-name:                servestatic
-version:             0.1.0.0
-synopsis:            Initial project template from stack
-description:         Please see README.md
-homepage:            http://github.com/JustusAdam/servestatic#readme
-license:             BSD3
-license-file:        LICENSE
-author:              Justus Adam
-maintainer:          dev@justus.science
-copyright:           2015
-category:            Data
-build-type:          Simple
--- extra-source-files:
-cabal-version:       >=1.10
-
-library
-  hs-source-dirs:      src
-  exposed-modules:     Snap.Snaplet.DocumentServer
-                     , Snap.Snaplet.ResourceServer
-  build-depends:       base >= 4.7 && < 5
-                     , snap
-                     , lens
-                     , bytestring
-                     , text
-                     , filepath
-                     , transformers
-                     , directory
-                     , unordered-containers
-                     , pandoc
-                     , blaze-html
-                     , data-default
-                     , extra
-  default-language:    Haskell2010
-
-executable servestatic-exe
-  hs-source-dirs:      app
-  main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  build-depends:       base
-                     , servestatic
-                     , snap
-  default-language:    Haskell2010
-
-test-suite servestatic-test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Spec.hs
-  build-depends:       base
-                     , servestatic
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  default-language:    Haskell2010
+name: servestatic
+version: 0.1.0.0
+cabal-version: >=1.10
+build-type: Simple
+license: BSD3
+license-file: LICENSE
+copyright: 2015
+maintainer: dev@justus.science
+homepage: http://github.com/JustusAdam/servestatic#readme
+synopsis: Initial project template from stack
+description:
+    Please see README.md
+category: Data
+author: Justus Adam
 
 source-repository head
-  type:     git
-  location: https://github.com/JustusAdam/servestatic
+    type: git
+    location: https://github.com/JustusAdam/servestatic
+
+library
+    exposed-modules:
+        Snap.Snaplet.DocumentServer
+        Snap.Snaplet.ResourceServer
+    other-modules:
+        Snap.Snaplet.DocumentServer.Compile
+    build-depends:
+        base >=4.7 && <5,
+        snap -any,
+        lens -any,
+        bytestring -any,
+        text -any,
+        filepath -any,
+        transformers -any,
+        directory -any,
+        unordered-containers -any,
+        pandoc -any,
+        blaze-html -any,
+        data-default -any,
+        extra -any
+    default-language: Haskell2010
+    hs-source-dirs: src
+    ghc-options: -Wall
+
+executable servestatic-exe
+    main-is: Main.hs
+    build-depends:
+        base -any,
+        servestatic -any,
+        snap -any
+    default-language: Haskell2010
+    hs-source-dirs: app
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N -Wall
+
+test-suite servestatic-test
+    type: exitcode-stdio-1.0
+    main-is: Spec.hs
+    build-depends:
+        base -any,
+        servestatic -any
+    default-language: Haskell2010
+    hs-source-dirs: test
+    ghc-options: -threaded -rtsopts -with-rtsopts=-N
