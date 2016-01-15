@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
-import Snap.Snaplet.ServeStatic
+import Snap.Snaplet.DocumentServer
 import Snap
 import System.Environment (getArgs)
 

@@ -1,32 +1,37 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
-module Snap.Snaplet.ServeStatic where
+module Snap.Snaplet.DocumentServer where
 
 
+import           Control.Applicative
+import           Control.Arrow                 ((&&&))
 import           Control.Lens
 import           Control.Lens.TH
-import           Control.Monad          (unless, void, when)
-import           Control.Monad.IO.Class (liftIO)
-import qualified Data.ByteString.Char8  as B
+import           Control.Monad                 (unless, void, when)
+import           Control.Monad.IO.Class        (liftIO)
+import           Control.Monad.Trans.Class     (lift)
+import           Control.Monad.Trans.Maybe
+import qualified Data.ByteString.Char8         as B
+import qualified Data.ByteString.Lazy.Char8    as LB
+import           Data.Default                  (Default, def)
+import qualified Data.HashMap.Strict           as HM
+import           Data.List.Extra               (intersperse, splitOn)
 import           Data.Maybe
-import           Data.Monoid            ((<>))
-import qualified Data.Text              as T
-import           Data.Text.Encoding     (encodeUtf8)
+import           Data.Maybe                    (fromMaybe)
+import           Data.Monoid                   ((<>))
+import qualified Data.Text                     as T
+import           Data.Text.Encoding            (encodeUtf8)
 import           Snap
 import           Snap.Snaplet.Heist
 import           System.Directory
 import           System.FilePath
-import           System.IO              (stderr, hPutStrLn)
-import Control.Applicative
-import qualified Data.HashMap.Strict as HM
-import Data.Maybe (fromMaybe)
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.Class (lift)
-import qualified Text.Blaze.Html5 as Html
-import Text.Blaze.Html.Renderer.Utf8 (renderHtmlBuilder)
-import Data.Default (def)
-import Text.Pandoc
-import qualified Text.Blaze.Html5.Attributes as Attr
+import           System.IO                     (hPutStrLn, stderr)
+import           Text.Blaze.Html.Renderer.Utf8 (renderHtmlBuilder)
+import qualified Text.Blaze.Html5              as Html
+import qualified Text.Blaze.Html5.Attributes   as Attr
+import           Text.Pandoc                   (Pandoc, readDocx, readLaTeX,
+                                                readMarkdown, readOdt,
+                                                writeHtml)
 
 
 writeError :: B.ByteString -> IO ()
@@ -49,19 +54,27 @@ compilerNotImplemented :: Monad m => a -> MaybeT m Html.Html
 compilerNotImplemented = const $ return $ Html.string "Compiler not implemented"
 
 
-mkCompiler :: (ReaderOptions -> String -> Either a Pandoc) -> String -> MaybeT IO Html.Html
+mkCompiler :: (LB.ByteString -> Either a Pandoc) -> String -> MaybeT IO Html.Html
 mkCompiler reader file = do
-  contents <- lift $ readFile file
-  case reader def contents of
+  contents <- lift $ LB.readFile file
+  case reader contents of
     Right val -> return $ writeHtml def val
     Left _ -> empty
 
 
 compilers :: HM.HashMap String (FilePath -> MaybeT IO Html.Html)
 compilers = HM.fromList
-  [ (".md", mkCompiler readMarkdown)
-  , (".markdown", mkCompiler readMarkdown)
+  [ (".md", markdown)
+  , (".markdown", markdown)
+  , (".tex", latex)
+  , (".docx", docx)
+  , (".odt", odt)
   ]
+  where
+    markdown = mkCompiler $ readMarkdown def . LB.unpack
+    latex = mkCompiler $ readLaTeX def . LB.unpack
+    docx = mkCompiler $ fmap fst . readDocx def
+    odt = mkCompiler $ fmap fst . readOdt def
 
 
 compile :: FilePath -> IO (Maybe Html.Html)
@@ -72,11 +85,11 @@ compile path = runMaybeT $ do
 
 initDocumentServer :: T.Text -> FilePath -> SnapletInit DocumentServer DocumentServer
 initDocumentServer name fp =
-  makeSnaplet (defaultID name) "Serves static files" Nothing $ do
+  makeSnaplet (defaultID name) "Serves documents" Nothing $ do
     directoryExists <- liftIO $ doesDirectoryExist fp
     let dirnameBS = encodeUtf8 name
     if directoryExists
-      then void $ addRoutes [(dirnameBS, documentHandler)]
+      then void $ addRoutes [("", documentHandler)]
       else void $ liftIO $ writeError $ "Directory " <> dirnameBS <> " does not exist, handler not installed."
 
     unless (isAbsolute fp) $ liftIO $
@@ -110,13 +123,40 @@ serveDirectory = do
           navigate path' = case reverse uri of
             '/':_ -> uri <> path'
             _ -> uri <> ('/':path')
-          makeEntry thing =
-            Html.li $ do
-              Html.a Html.! Attr.href (Html.toValue $ navigate thing) $
-                Html.string thing
-
-      respBasicPage (Html.string path) $ Html.ul $ mapM_ makeEntry contents
+      breadc <- breadcrumbs
+      respHtml $
+        htmlPage
+          (Html.title $ Html.string path)
+          $ Html.div $ do
+              Html.div breadc
+              Html.div $
+                makeLinkList $ map (navigate &&& id) contents
     else empty
+
+
+duplicate a = (a, a)
+
+
+makeLinkList =
+  Html.ul .
+    mapM_ (\(target, thing) ->
+      Html.li $ do
+        Html.a Html.! Attr.href (Html.toValue target) $
+          Html.string thing)
+
+
+joinWith c a b = a <> c <> b
+
+
+breadcrumbs :: Handler b DocumentServer Html.Html
+breadcrumbs = do
+  path <- getDocServerPath
+  basePath <- withRequest $ return . B.unpack . rqContextPath
+  let segments = splitOn "/" path
+      partialPaths = scanl (joinWith "/") "" segments
+      absolutizedPaths = map (basePath </>) partialPaths
+      makeLink (target, value) = Html.a Html.! Attr.href (Html.toValue target) $ Html.string value
+  return $ sequence_ $ intersperse (Html.span $ Html.string "/") $ map makeLink $ zip absolutizedPaths ("🏠":segments)
 
 
 respHtml :: MonadSnap m => Html.Html -> m ()
@@ -127,16 +167,18 @@ respBasicPage :: MonadSnap m => Html.Html -> Html.Html -> m ()
 respBasicPage = (respHtml .) . basicPage
 
 
-basicPage :: Html.Html -> Html.Html -> Html.Html
-basicPage title content = do
+htmlPage :: Html.Html -> Html.Html -> Html.Html
+htmlPage head body = do
   Html.docType
   Html.html $ do
     Html.head $ do
-      Html.title title
       Html.meta Html.! Attr.charset "utf-8"
-    Html.body $ do
-      Html.h1 title
-      Html.div content
+      head
+    Html.body body
+
+
+basicPage :: Html.Html -> Html.Html -> Html.Html
+basicPage title content = htmlPage (Html.title title) (Html.div content)
 
 
 absolutize :: FilePath -> Handler b DocumentServer FilePath
