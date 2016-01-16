@@ -10,7 +10,6 @@ import           Control.Monad                       (unless, void)
 import           Control.Monad.IO.Class              (liftIO)
 import qualified Data.ByteString.Char8               as B
 import           Data.List.Extra                     (intersperse, splitOn)
-import           Data.Maybe                          (fromMaybe)
 import           Data.Monoid                         ((<>))
 import qualified Data.Text                           as T
 import           Data.Text.Encoding                  (encodeUtf8)
@@ -31,6 +30,7 @@ writeError = B.hPutStrLn stderr
 defaultID :: T.Text -> T.Text
 defaultID = ("DocumentServer:" <>)
 
+
 data DocumentServer = DocumentServer
   { _directory :: FilePath
   , _serveName :: T.Text
@@ -47,7 +47,8 @@ initDocumentServer name fp =
     let dirnameBS = encodeUtf8 name
     if directoryExists
       then void $ addRoutes [("", documentHandler)]
-      else void $ liftIO $ writeError $ "Directory " <> dirnameBS <> " does not exist, handler not installed."
+      else void $ liftIO $
+            writeError $ "Directory " <> dirnameBS <> " does not exist, handler not installed."
 
     unless (isAbsolute fp) $ liftIO $
       writeError "Running the document server on a relative path is not recommended!"
@@ -85,9 +86,7 @@ serveDirectory = do
     then do
       let isRoot = requestedPath == "/" || requestedPath == ""
       contents <-
-        filter (\p ->
-          p /= "." && (not isRoot || p /= "..")
-          )
+        filter (\p -> p /= "." && (not isRoot || p /= ".."))
         <$>
         liftIO (getDirectoryContents absolutePath)
       uri <- withRequest $ return . B.unpack . rqURI
@@ -111,12 +110,13 @@ duplicate a = (a, a)
 
 
 makeLinkList :: [(String, String)] -> Html.Html
-makeLinkList =
-  Html.ul .
-    mapM_ (\(target, thing) ->
-      Html.li $ do
-        Html.a Html.! Attr.href (Html.toValue target) $
-          Html.string thing)
+makeLinkList = Html.ul . mapM_ (Html.li . makeLink)
+
+
+makeLink :: Html.ToValue a => (a, String) -> Html.Html
+makeLink (target, name) =
+  Html.a Html.! Attr.href (Html.toValue target) $
+    Html.string name
 
 
 joinWith :: Monoid m => m -> m -> m -> m
@@ -130,8 +130,11 @@ breadcrumbs = do
   let segments = splitOn "/" requestedPath
       partialPaths = scanl (joinWith "/") "" segments
       absolutizedPaths = map (basePath </>) partialPaths
-      makeLink (target, value) = Html.a Html.! Attr.href (Html.toValue target) $ Html.string value
-  return $ sequence_ $ intersperse (Html.span $ Html.string "/") $ map makeLink $ zip absolutizedPaths ("🏠":segments)
+  zip absolutizedPaths ("🏠":segments)
+    & map makeLink
+    & intersperse (Html.span $ Html.string "/")
+    & sequence_
+    & return
 
 
 respHtml :: MonadSnap m => Html.Html -> m ()
@@ -143,12 +146,12 @@ respBasicPage = (respHtml .) . basicPage
 
 
 htmlPage :: Html.Html -> Html.Html -> Html.Html
-htmlPage head body = do
+htmlPage head_ body = do
   Html.docType
   Html.html $ do
     Html.head $ do
       Html.meta Html.! Attr.charset "utf-8"
-      head
+      head_
     Html.body body
 
 

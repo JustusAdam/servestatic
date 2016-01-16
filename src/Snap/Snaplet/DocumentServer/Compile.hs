@@ -4,17 +4,15 @@ module Snap.Snaplet.DocumentServer.Compile
     ) where
 
 
-import           Control.Applicative
-import           Control.Monad.Trans.Class  (lift)
 import           Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy.Char8 as LB
 import           Data.Default               (def)
 import qualified Data.HashMap.Strict        as HM
+import           Data.Text.Lazy.IO          as T
+import           System.FilePath            (takeExtension)
 import qualified Text.Blaze.Html5           as Html
 import           Text.Pandoc                (Pandoc, readDocx, readLaTeX,
                                              readMarkdown, readOdt, writeHtml)
-import           System.FilePath (takeExtension)
-import Data.Text.Lazy.IO as T
 
 
 data CompileResult
@@ -28,8 +26,7 @@ compilerNotImplemented = const $ return $ Html.string "Compiler not implemented"
 
 
 mkCompiler :: Show a => (LB.ByteString -> Either a Pandoc) -> String -> IO CompileResult
-mkCompiler reader file = do
-  handle . reader <$> LB.readFile file
+mkCompiler reader file = handle . reader <$> LB.readFile file
   where
     handle (Right val) = Embeddable $ writeHtml def val
     handle (Left  a  ) = Failed $ show a
