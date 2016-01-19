@@ -14,7 +14,9 @@ import           Data.Monoid                         ((<>))
 import qualified Data.Text                           as T
 import           Data.Text.Encoding                  (encodeUtf8)
 import           Snap
-import           Snap.Snaplet.DocumentServer.Compile (compile, CompileResult(..))
+import           Snap.Snaplet.DocumentServer.Compile (CompileResult (..),
+                                                      compile)
+import           Snap.Snaplet.DocumentServer.Pages
 import           System.Directory
 import           System.FilePath
 import           System.IO                           (stderr)
@@ -66,7 +68,7 @@ serveDocument = do
       compiled <- liftIO $ compile absolutePath
       breadc <- breadcrumbs
       let embed e =
-            respBasicPage (Html.string requestedPath) $ do
+            documentPage requestedPath
               breadc
               e
       case compiled of
@@ -96,12 +98,11 @@ serveDirectory = do
             _ -> uri <> ('/':path')
       breadc <- breadcrumbs
       respHtml $
-        htmlPage
-          (Html.title $ Html.string requestedPath)
-          $ Html.div $ do
-              Html.div breadc
-              Html.div $
-                makeLinkList $ map (navigate &&& id) contents
+        documentPage
+          requestedPath
+          breadc
+          $ Html.div $
+              makeLinkList $ map (navigate &&& id) contents
     else empty
 
 
@@ -113,17 +114,11 @@ makeLinkList :: [(String, String)] -> Html.Html
 makeLinkList = Html.ul . mapM_ (Html.li . makeLink)
 
 
-makeLink :: Html.ToValue a => (a, String) -> Html.Html
-makeLink (target, name) =
-  Html.a Html.! Attr.href (Html.toValue target) $
-    Html.string name
-
-
 joinWith :: Monoid m => m -> m -> m -> m
 joinWith c a b = a <> c <> b
 
 
-breadcrumbs :: Handler b DocumentServer Html.Html
+breadcrumbs :: Handler b DocumentServer Breadcrumbs
 breadcrumbs = do
   requestedPath <- getDocServerPath
   basePath <- withRequest $ return . B.unpack . rqContextPath
@@ -131,10 +126,6 @@ breadcrumbs = do
       partialPaths = scanl (joinWith "/") "" segments
       absolutizedPaths = map (basePath </>) partialPaths
   zip absolutizedPaths ("🏠":segments)
-    & map makeLink
-    & intersperse (Html.span $ Html.string "/")
-    & sequence_
-    & return
 
 
 respHtml :: MonadSnap m => Html.Html -> m ()
@@ -143,20 +134,6 @@ respHtml = writeBuilder . renderHtmlBuilder
 
 respBasicPage :: MonadSnap m => Html.Html -> Html.Html -> m ()
 respBasicPage = (respHtml .) . basicPage
-
-
-htmlPage :: Html.Html -> Html.Html -> Html.Html
-htmlPage head_ body = do
-  Html.docType
-  Html.html $ do
-    Html.head $ do
-      Html.meta Html.! Attr.charset "utf-8"
-      head_
-    Html.body body
-
-
-basicPage :: Html.Html -> Html.Html -> Html.Html
-basicPage title content = htmlPage (Html.title title) (Html.div content)
 
 
 absolutize :: FilePath -> Handler b DocumentServer FilePath

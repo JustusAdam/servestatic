@@ -23,6 +23,7 @@ library
         Snap.Snaplet.ResourceServer
     other-modules:
         Snap.Snaplet.DocumentServer.Compile
+        Snap.Snaplet.DocumentServer.Pages
     build-depends:
         base >=4.7 && <5,
         snap -any,

@@ -3,3 +3,7 @@
 *.iml
 dist/
 log/
+*.css
+*.css.map
+.vscode/
+.sass-cache/
