@@ -27,8 +27,8 @@ printError :: String -> IO ()
 printError = hPutStrLn stderr
 
 
-initDocumentServer :: [(B.ByteString, FilePath)] -> SnapletInit ResourceConf ResourceConf
-initDocumentServer servePaths =
+initResourceServer :: [(B.ByteString, FilePath)] -> SnapletInit ResourceConf ResourceConf
+initResourceServer servePaths =
   makeSnaplet "assets" "Serves static files like css and javascript." Nothing $ do
     installable <- flip filterM servePaths $ \(_, systemPath) -> do
       exists <- liftIO $ doesDirectoryExist systemPath
