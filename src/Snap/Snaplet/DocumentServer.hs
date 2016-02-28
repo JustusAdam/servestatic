@@ -67,10 +67,7 @@ serveDocument = do
     then do
       compiled <- liftIO $ compile absolutePath
       breadc <- breadcrumbs
-      let embed e =
-            documentPage requestedPath
-              breadc
-              e
+      let embed = respHtml . documentPage requestedPath breadc
       case compiled of
         Embeddable h -> embed h
         Servable b -> writeLBS b
@@ -125,7 +122,7 @@ breadcrumbs = do
   let segments = splitOn "/" requestedPath
       partialPaths = scanl (joinWith "/") "" segments
       absolutizedPaths = map (basePath </>) partialPaths
-  zip absolutizedPaths ("🏠":segments)
+  return $ zip absolutizedPaths ("🏠":segments)
 
 
 respHtml :: MonadSnap m => Html.Html -> m ()

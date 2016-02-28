@@ -1,5 +1,5 @@
 name: servestatic
-version: 0.1.0.0
+version: 0.1.0
 cabal-version: >=1.10
 build-type: Simple
 license: BSD3
@@ -10,7 +10,7 @@ homepage: http://github.com/JustusAdam/servestatic#readme
 synopsis: Initial project template from stack
 description:
     Please see README.md
-category: Data
+category: Data, Data
 author: Justus Adam
 
 source-repository head

@@ -2,28 +2,29 @@ module Snap.Snaplet.DocumentServer.Pages where
 
 
 import           Control.Category            ((>>>))
+import           Data.List                   (intersperse)
 import           Prelude                     hiding (div, head, span)
-import           Text.Blaze.Html5            as Html
-import           Text.Blaze.Html5.Attributes as Attr
+import           Text.Blaze.Html5            as Html hiding (map)
+import           Text.Blaze.Html5.Attributes as Attr hiding (span)
 
 
 type Breadcrumbs = [(String, String)]
 
 
 htmlPage :: Html -> Html -> Html
-htmlPage head_ body = do
+htmlPage head_ body_ = do
   docType
   html $ do
     head $ do
-      meta ! charset "utf-8"
+      meta ! charset (toValue "utf-8")
       head_
-    body body
+    body body_
 
 
 basicPage :: Html -> Html -> Html
-basicPage title content =
+basicPage title_ content =
   htmlPage
-    (title title)
+    (Html.title title_)
     $ div content
 
 
@@ -32,9 +33,9 @@ documentPage title breadcrumbs content =
   basicPage
     (string title)
     $ div $ do
-        div ! class_ "top-bar" $ do
+        div ! class_ (toValue "top-bar") $ do
           nav $ renderBreadcrumbs breadcrumbs
-        div ! class_ "document-container"
+        div ! class_ (toValue "document-container") $ content
 
 
 makeLink :: ToValue a => (a, String) -> Html
