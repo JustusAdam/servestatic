@@ -21,6 +21,9 @@ data CompileResult
   | Failed String
 
 
+(~>) = (,)
+
+
 compilerNotImplemented :: Monad m => a -> MaybeT m Html.Html
 compilerNotImplemented = const $ return $ Html.string "Compiler not implemented"
 
@@ -34,12 +37,12 @@ mkCompiler reader file = handle . reader <$> LB.readFile file
 
 compilers :: HM.HashMap String (FilePath -> IO CompileResult)
 compilers = HM.fromList
-  [ (".md", markdown)
-  , (".markdown", markdown)
-  , (".tex", latex)
-  , (".docx", docx)
-  , (".odt", odt)
-  , (".html", html)
+  [ ".md"       ~> markdown
+  , ".markdown" ~> markdown
+  , ".tex"      ~> latex
+  , ".docx"     ~> docx
+  , ".odt"      ~> odt
+  , ".html"     ~> html
   ]
   where
     markdown = mkCompiler $ readMarkdown def . LB.unpack
